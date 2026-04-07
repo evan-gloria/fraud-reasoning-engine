@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "fraud-reasoning-engine"
+version = "0.1.0"
+description = "Fraud Reasoning Engine PoC — Vertex AI Reasoning Engine with Text-to-SQL capabilities."
+authors = ["Evan G <evan.f.l.gloria@gmail.com>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+faker = "^33.0.0"
+pandas = "^2.2.0"
+google-cloud-bigquery = "^3.25.0"
+google-cloud-aiplatform = "^1.60.0"
+db-dtypes = "^1.3.0"
+python-dotenv = "^1.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
