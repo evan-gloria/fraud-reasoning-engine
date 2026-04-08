@@ -47,7 +47,7 @@ Rules:
 
 
 import vertexai
-from vertexai.generative_models import GenerativeModel, Tool, FunctionDeclaration, Part
+from vertexai.generative_models import GenerativeModel, Tool, FunctionDeclaration, Part, Content
 from agent_skills.bq_sql_skill import run_text_to_sql
 from agent_skills.graph_skill import generate_chart
 
@@ -85,7 +85,7 @@ graph_func = FunctionDeclaration(
 
 native_tools = Tool(function_declarations=[sql_func, graph_func])
 
-def get_agent():
+def get_agent(history_dicts=None):
     """
     Initialises and returns a native Vertex AI Chat session.
     """
@@ -98,8 +98,15 @@ def get_agent():
         tools=[native_tools]
     )
     
+    # Reconstruct Chat Context from REST payload
+    history = []
+    if history_dicts:
+        for msg in history_dicts:
+            role = "user" if msg["role"] == "user" else "model"
+            history.append(Content(role=role, parts=[Part.from_text(msg["content"])]))
+    
     # Return a stateful chat session
-    return model.start_chat()
+    return model.start_chat(history=history)
 
 def ask_agent(chat_session, user_input: str) -> str:
     """
