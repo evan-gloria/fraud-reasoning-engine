@@ -1,0 +1,8 @@
+.git
+.gitignore
+.venv/
+__pycache__/
+.env
+mock_data/ transactions_seed.csv
+.pytest_cache/
+app/static/*.png

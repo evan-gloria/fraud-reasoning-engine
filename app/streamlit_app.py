@@ -3,16 +3,17 @@ streamlit_app.py
 
 A professional web front-end for the Fraud Reasoning Engine.
 Built using Streamlit to provide a sleek, chat-based interface.
+It is completely decoupled and communicates with the Backend via REST API.
 """
 
 import streamlit as st
-import sys
-from pathlib import Path
+import os
+import requests
+import base64
 
-# Provide access to our agent and skills folders
-sys.path.append(str(Path(__file__).parent.parent))
-
-from reasoning_engine.fraud_investigator import get_agent, SYSTEM_INSTRUCTION
+# Note: We do NOT load internal environment variables like GCP_PROJECT here!
+# This UI is purely a presentation layer. It only needs the API_URL.
+API_URL = os.environ.get("API_URL", "http://0.0.0.0:8080/chat")
 
 # ---------------------------------------------------------------------------
 # App Configuration
@@ -30,27 +31,9 @@ st.markdown(
     """
     **Ask natural language questions about your BigQuery credit card transactions.** 
     The Vertex AI agent automatically translates your questions into SQL, runs the queries, 
-    and summarizes the findings. 
+    and summarizes the findings safely behind our decoupled REST API.
     """
 )
-
-# ---------------------------------------------------------------------------
-# Agent Initialization
-# ---------------------------------------------------------------------------
-
-def load_agent():
-    """
-    Loads the Langchain Vertex Agent and returns it.
-    """
-    return get_agent()
-
-try:
-    if "agent" not in st.session_state:
-        st.session_state.agent = load_agent()
-    agent = st.session_state.agent
-except Exception as e:
-    st.error(f"Failed to load Vertex AI Agent: {e}")
-    st.stop()
 
 # ---------------------------------------------------------------------------
 # Chat State Management
@@ -66,11 +49,10 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
         
-        # Display past charts if they exist in state
-        if msg.get("chart"):
-            chart_path = Path(__file__).parent / "static" / msg["chart"]
-            if chart_path.exists():
-                st.image(str(chart_path))
+        # Display past charts dynamically without relying on local backend disk
+        if msg.get("chart_base64"):
+            image_data = base64.b64decode(msg["chart_base64"])
+            st.image(image_data)
 
 # ---------------------------------------------------------------------------
 # Chat execution
@@ -78,43 +60,45 @@ for msg in st.session_state.messages:
 
 if prompt := st.chat_input("E.g., How many transactions were flagged as fraud?"):
     
-    # 1. Display and save user message
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    # 1. Display user message
     with st.chat_message("user"):
         st.markdown(prompt)
         
-    # 2. Invoke the agent
+    # 2. Invoke the Decoupled Backend API
     with st.chat_message("assistant"):
-        with st.spinner("Investigating..."):
-            import re
-            from pathlib import Path
+        with st.spinner("Investigating remotely..."):
             try:
-                from reasoning_engine.fraud_investigator import ask_agent
+                # Prepare payload
+                payload = {
+                    "messages": st.session_state.messages,
+                    "prompt": prompt
+                }
                 
-                # Query the native Vertex AI chat session and automatically trigger tool calling
-                answer = ask_agent(chat_session=agent, user_input=prompt)
+                response = requests.post(API_URL, json=payload)
                 
-                # Intercept any graph tags intended for Streamlit rendering
-                chart_match = re.search(r'<CHART>(.*?)</CHART>', answer)
-                chart_filename = None
-                if chart_match:
-                    chart_filename = chart_match.group(1).strip()
-                    # Strip the hidden tag from the underlying text so the user doesn't see it
-                    answer = answer.replace(chart_match.group(0), "")
-                
-                # Display output text
-                st.markdown(answer)
-                st.session_state.messages.append({"role": "assistant", "content": answer, "chart": chart_filename})
-                
-                # If the agent drew a chart, load it from the static folder and display it!
-                if chart_filename:
-                    chart_path = Path(__file__).parent / "static" / chart_filename
-                    if chart_path.exists():
-                        st.image(str(chart_path))
-                    else:
-                        st.warning(f"Could not load image: {chart_path}")
-                
+                if response.status_code == 200:
+                    data = response.json()
+                    answer = data.get("response", "")
+                    chart_base64 = data.get("chart_base64")
+                    
+                    st.markdown(answer)
+                    
+                    # Package state objects
+                    msg_state = {"role": "assistant", "content": answer}
+                    
+                    if chart_base64:
+                        image_data = base64.b64decode(chart_base64)
+                        st.image(image_data)
+                        msg_state["chart_base64"] = chart_base64
+                        
+                    # Commit to history state
+                    st.session_state.messages.append({"role": "user", "content": prompt})
+                    st.session_state.messages.append(msg_state)
+                    
+                else:
+                    st.error(f"Backend API Error [{response.status_code}]: {response.text}")
+                    
+            except requests.exceptions.ConnectionError:
+                st.error(f"Failed to connect to Backend Server at `{API_URL}`. Ensure FastAPI is running!")
             except Exception as e:
-                error_msg = f"Sorry, I encountered an error during my investigation: {str(e)}"
-                st.error(error_msg)
-                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                st.error(f"Unhandled Streamlit Error: {str(e)}")
