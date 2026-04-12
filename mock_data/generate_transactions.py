@@ -93,7 +93,7 @@ def _generate_amounts(n: int, fraud_mask: np.ndarray) -> np.ndarray:
 
 def _generate_risk_scores(fraud_mask: np.ndarray, amounts: np.ndarray) -> np.ndarray:
     """
-    Generates risk scores [0.0, 1.0] highly correlated with is_flagged_fraud,
+    Generates risk scores [0.0, 1.0] highly correlated with is_flagged,
     with realistic noise so it's not a perfect predictor.
     """
     rng = np.random.default_rng(99)
@@ -171,9 +171,9 @@ def generate_dataset(num_records: int = NUM_RECORDS) -> pd.DataFrame:
             "transaction_timestamp": timestamps,
             "merchant_name": [FAKE.company() for _ in range(num_records)],
             "merchant_category_code": [MCC_CODES[i] for i in mcc_indices],
-            "amount": amounts,
+            "transaction_amount": amounts,
             "currency": currencies,
-            "is_flagged_fraud": fraud_mask,
+            "is_flagged": fraud_mask,
             "risk_score": risk_scores,
             "location_country": countries,
             "terminal_id": [f"TERM_{rng.integers(1000, 9999)}" for _ in range(num_records)],
@@ -216,6 +216,7 @@ def load_to_bigquery(
     project_id: str | None = None,
     dataset_id: str = "retail_banking",
     table_id: str = "credit_card_transactions",
+    truncate: bool = False,
 ) -> None:
     """
     Loads the transactions DataFrame directly into BigQuery.
@@ -229,6 +230,7 @@ def load_to_bigquery(
         project_id: GCP project ID. Falls back to GCP_PROJECT env var.
         dataset_id: BigQuery dataset name. Default: retail_banking.
         table_id: BigQuery table name. Default: credit_card_transactions.
+        truncate: If True, overwrites the table. Default: False (Append).
     """
     from google.cloud import bigquery  # lazy import — only required for BQ path
 
@@ -254,22 +256,23 @@ def load_to_bigquery(
 
     # Explicit schema to guarantee correct BigQuery types
     schema = [
-        bigquery.SchemaField("transaction_id", "STRING"),
-        bigquery.SchemaField("customer_id", "STRING"),
-        bigquery.SchemaField("transaction_timestamp", "TIMESTAMP"),
-        bigquery.SchemaField("merchant_name", "STRING"),
-        bigquery.SchemaField("merchant_category_code", "STRING"),
-        bigquery.SchemaField("amount", "FLOAT64"),
-        bigquery.SchemaField("currency", "STRING"),
-        bigquery.SchemaField("is_flagged_fraud", "BOOLEAN"),
-        bigquery.SchemaField("risk_score", "FLOAT64"),
-        bigquery.SchemaField("location_country", "STRING"),
-        bigquery.SchemaField("terminal_id", "STRING"),
+        bigquery.SchemaField("transaction_id", "STRING", description="Unique identifier assigned to a discrete financial transaction"),
+        bigquery.SchemaField("customer_id", "STRING", description="Unique identifier for user"),
+        bigquery.SchemaField("transaction_timestamp", "TIMESTAMP", description="The exact time the transaction occurred"),
+        bigquery.SchemaField("merchant_name", "STRING", description="Name of merchant"),
+        bigquery.SchemaField("merchant_category_code", "STRING", description="A standard four-digit number used by credit card processors to classify a business by the type of goods or services it provides."),
+        bigquery.SchemaField("transaction_amount", "FLOAT64", description="Monetary value of a single financial transaction"),
+        bigquery.SchemaField("currency", "STRING", description="ISO 4217 currency code such as USD or EUR"),
+        bigquery.SchemaField("is_flagged", "BOOLEAN", description="Whether the transaction was flagged by the ML model"),
+        bigquery.SchemaField("risk_score", "FLOAT64", description="Quantitative assessment of the financial risk associated with an entity or transaction"),
+        bigquery.SchemaField("location_country", "STRING", description="Country where the transaction occurred"),
+        bigquery.SchemaField("terminal_id", "STRING", description="Payment terminal identifier"),
     ]
 
+    disposition = bigquery.WriteDisposition.WRITE_TRUNCATE if truncate else bigquery.WriteDisposition.WRITE_APPEND
     job_config = bigquery.LoadJobConfig(
         schema=schema,
-        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        write_disposition=disposition,
     )
 
     print(f"⬆️  Loading {len(df):,} rows to {full_table_id} ...")
@@ -293,13 +296,27 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num-records",
         type=int,
-        default=NUM_RECORDS,
-        help=f"Number of records to generate (default: {NUM_RECORDS}).",
+        default=None,
+        help="Number of records to generate (default: random 5-20).",
+    )
+    parser.add_argument(
+        "--truncate",
+        action="store_true",
+        help="Overwrite the BigQuery table instead of appending (Warning: deletes existing data).",
     )
     args = parser.parse_args()
 
-    transactions_df = generate_dataset(num_records=args.num_records)
+    # Default to 5-20 records if not specified, or 5,000 if truncate is used
+    if args.num_records is not None:
+        count = args.num_records
+    elif args.truncate:
+        count = NUM_RECORDS
+    else:
+        rng = np.random.default_rng()
+        count = int(rng.integers(5, 21))
+
+    transactions_df = generate_dataset(num_records=count)
     save_to_csv(transactions_df)
 
     if args.load_bq:
-        load_to_bigquery(transactions_df)
+        load_to_bigquery(transactions_df, truncate=args.truncate)

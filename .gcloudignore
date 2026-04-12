@@ -1,0 +1,23 @@
+# Version Control
+.git
+.gitignore
+
+# Python / Environment
+.venv/
+__pycache__/
+*.pyc
+.env
+.python-version
+.pytest_cache/
+
+# Local OS Files
+.DS_Store
+
+# Prune Data & Frontend (Not needed for the FastAPI Cloud Run Backend)
+mock_data/
+app/
+assets/
+
+# Documentation & Misc
+README.md
+LICENSE

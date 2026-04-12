@@ -10,12 +10,19 @@ from reasoning_engine.fraud_investigator import get_agent, ask_agent
 
 app = FastAPI(title="Fraud Reasoning Engine Backend")
 
+@app.get("/")
+def read_root():
+    return {
+        "status": "online",
+        "service": "Fraud Reasoning Engine Backend",
+        "documentation": "/docs"
+    }
+
 # REST API Request Schemas
 class Message(BaseModel):
     role: str
     content: str
-    chart_base64: Optional[str] = None
-    chart: Optional[str] = None # Legacy support
+    charts_base64: Optional[List[str]] = None
 
 class ChatRequest(BaseModel):
     messages: List[Message]
@@ -34,22 +41,22 @@ def chat_endpoint(request: ChatRequest):
         answer = ask_agent(chat_session=agent, user_input=request.prompt)
         
         # Evaluate output for dynamically generated Visualizations
-        chart_base64 = None
-        chart_match = re.search(r'<CHART>(.*?)</CHART>', answer)
+        charts_base64 = []
+        chart_matches = re.findall(r'<CHART>(.*?)</CHART>', answer)
         
-        if chart_match:
-            chart_filename = chart_match.group(1).strip()
-            answer = answer.replace(chart_match.group(0), "")
+        for chart_filename in chart_matches:
+            full_tag = f"<CHART>{chart_filename}</CHART>"
+            answer = answer.replace(full_tag, "")
             
-            # Read from the backend's local disk space and encode to Base64 to transport over the internet
-            chart_path = Path(__file__).parent.parent / "app" / "static" / chart_filename
+            # Read from the backend's local disk space and encode to Base64
+            chart_path = Path(__file__).parent.parent / "app" / "static" / chart_filename.strip()
             if chart_path.exists():
                 with open(chart_path, "rb") as image_file:
-                    chart_base64 = base64.b64encode(image_file.read()).decode('utf-8')
+                    charts_base64.append(base64.b64encode(image_file.read()).decode('utf-8'))
                     
         return {
             "response": answer,
-            "chart_base64": chart_base64
+            "charts_base64": charts_base64
         }
         
     except Exception as e:

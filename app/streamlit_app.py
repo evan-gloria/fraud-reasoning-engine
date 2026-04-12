@@ -49,10 +49,11 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
         
-        # Display past charts dynamically without relying on local backend disk
-        if msg.get("chart_base64"):
-            image_data = base64.b64decode(msg["chart_base64"])
-            st.image(image_data)
+        # Display past charts dynamically
+        if msg.get("charts_base64"):
+            for chart_b64 in msg["charts_base64"]:
+                image_data = base64.b64decode(chart_b64)
+                st.image(image_data)
 
 # ---------------------------------------------------------------------------
 # Chat execution
@@ -79,17 +80,17 @@ if prompt := st.chat_input("E.g., How many transactions were flagged as fraud?")
                 if response.status_code == 200:
                     data = response.json()
                     answer = data.get("response", "")
-                    chart_base64 = data.get("chart_base64")
+                    charts_base64 = data.get("charts_base64", [])
                     
                     st.markdown(answer)
                     
                     # Package state objects
-                    msg_state = {"role": "assistant", "content": answer}
+                    msg_state = {"role": "assistant", "content": answer, "charts_base64": charts_base64}
                     
-                    if chart_base64:
-                        image_data = base64.b64decode(chart_base64)
-                        st.image(image_data)
-                        msg_state["chart_base64"] = chart_base64
+                    if charts_base64:
+                        for chart_b64 in charts_base64:
+                            image_data = base64.b64decode(chart_b64)
+                            st.image(image_data)
                         
                     # Commit to history state
                     st.session_state.messages.append({"role": "user", "content": prompt})
