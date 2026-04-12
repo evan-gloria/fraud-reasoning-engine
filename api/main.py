@@ -49,7 +49,7 @@ def chat_endpoint(request: ChatRequest):
             answer = answer.replace(full_tag, "")
             
             # Read from the backend's local disk space and encode to Base64
-            chart_path = Path(__file__).parent.parent / "app" / "static" / chart_filename.strip()
+            chart_path = Path(__file__).parent.parent / "ui" / "static" / chart_filename.strip()
             if chart_path.exists():
                 with open(chart_path, "rb") as image_file:
                     charts_base64.append(base64.b64encode(image_file.read()).decode('utf-8'))
