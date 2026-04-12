@@ -10,8 +10,8 @@ import seaborn as sns
 import os
 from pathlib import Path
 
-# Ensure the app folder exists to store the image
-OUTPUT_DIR = Path(__file__).parent.parent / "app" / "static"
+# Ensure the ui folder exists to store the image
+OUTPUT_DIR = Path(__file__).parent.parent / "ui" / "static"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 def generate_chart(title: str, x_labels: list[str], series: list[dict],

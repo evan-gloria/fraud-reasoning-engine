@@ -63,8 +63,8 @@ This autonomous loop is what makes it **agentic** — the AI decides *what* to d
 | `agent_skills/bq_sql_skill.py` | BigQuery + Gemini | Translates natural language → SQL, executes queries, auto-retries on errors |
 | `agent_skills/graph_skill.py` | Matplotlib + Seaborn | Generates multi-series charts (bar, line, combo) with dual Y-axes |
 | `api/` | FastAPI + Cloud Run | Production REST API backend, deployed as a container |
-| `app/` | Streamlit | Decoupled chat-based frontend (can be hosted anywhere) |
-| `mock_data/` | Faker + NumPy + Pandas | Synthetic data generator (5,000 realistic credit card transactions) |
+| `ui/` | Streamlit | Decoupled chat-based frontend (can be hosted anywhere) |
+| `scripts/` | Faker + NumPy + Pandas | Synthetic data generator (5,000 realistic credit card transactions) |
 
 ---
 
@@ -104,7 +104,7 @@ cp .env.example .env
 gcloud auth application-default login
 
 # 5. Generate and load synthetic data into BigQuery
-poetry run python mock_data/generate_transactions.py --load-bq
+poetry run python scripts/generate_transactions.py --load-bq
 ```
 
 ### Running Locally
@@ -114,7 +114,7 @@ poetry run python mock_data/generate_transactions.py --load-bq
 poetry run uvicorn api.main:app --host 0.0.0.0 --port 8080
 
 # In a separate terminal, start the Streamlit frontend
-poetry run streamlit run app/streamlit_app.py
+poetry run streamlit run ui/streamlit_app.py
 ```
 
 ### Deploying to Google Cloud
@@ -133,10 +133,10 @@ gcloud run deploy fraud-reasoning-engine \
 
 ```bash
 # Append 5-20 random new transactions (safe — does NOT overwrite)
-poetry run python mock_data/generate_transactions.py --load-bq
+poetry run python scripts/generate_transactions.py --load-bq
 
 # Reset the table with 5,000 fresh records
-poetry run python mock_data/generate_transactions.py --load-bq --truncate
+poetry run python scripts/generate_transactions.py --load-bq --truncate
 ```
 
 ---

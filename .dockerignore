@@ -14,9 +14,8 @@ __pycache__/
 .DS_Store
 
 # Prune Data & Frontend (Not needed for the FastAPI Cloud Run Backend)
-mock_data/
-app/
-assets/
+scripts/
+ui/
 
 # Documentation & Misc
 README.md
