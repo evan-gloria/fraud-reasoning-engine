@@ -5,13 +5,13 @@ Generates 5,000 synthetic retail banking credit card transactions for use
 in testing the Vertex AI Reasoning Engine Text-to-SQL capabilities.
 
 Outputs:
-  - mock_data/transactions_seed.csv (local inspection)
+  - scripts/transactions_seed.csv (local inspection)
 
 Usage:
-  python mock_data/generate_transactions.py
+  python scripts/generate_transactions.py
 
 To also load into BigQuery:
-  python mock_data/generate_transactions.py --load-bq
+  python scripts/generate_transactions.py --load-bq
 """
 
 import argparse
@@ -198,7 +198,7 @@ def save_to_csv(df: pd.DataFrame, file_path: str | Path = OUTPUT_CSV) -> None:
 
     Args:
         df: The transactions DataFrame.
-        file_path: Output path. Defaults to mock_data/transactions_seed.csv.
+        file_path: Output path. Defaults to scripts/transactions_seed.csv.
     """
     path = Path(file_path)
     path.parent.mkdir(parents=True, exist_ok=True)
