@@ -153,6 +153,13 @@ Once the app is running, test the agent's reasoning with these prompts:
 | *"Show the daily fraud count as a bar chart and cumulative as a line chart"* | Combo chart with dual Y-axes |
 | *"What is the average risk score for international transactions above $500 AUD?"* | Multi-condition filtering |
 | *"Write me a poem about credit cards"* | Persona guardrails (should decline) |
+| *"Show a pie chart of the distribution between fraud and non-fraud transactions."* | **Pie Charts** |
+| *"Create a pie chart showing the currency breakdown for all fraudulent transactions."* | **Filtered Visualizations** |
+| *"Visualize the count of fraud vs. non-fraud transactions by country in a horizontal bar chart."* | **`barh` (Horizontal Bar) charts** |
+| *"Show the top 5 merchant categories with the highest fraud rates as a bar chart."* | **Complex Aggregations** |
+| *"Show daily fraud counts as a bar chart and cumulative totals as a line chart for the last 14 days."* | **Combo Charts + Dual Axes** |
+| *"What is the average risk score for international transactions above $500 AUD?"* | **Multi-condition filtering** |
+| *"Write me a poem about credit cards"* | **Persona guardrails** (should decline) |
 
 ---
 
