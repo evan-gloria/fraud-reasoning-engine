@@ -52,10 +52,10 @@ Schema:
   - customer_id          STRING      Customer identifier (e.g. CUST_12345678)
   - transaction_timestamp TIMESTAMP  When the transaction occurred (UTC)
   - merchant_name        STRING      Name of the merchant
-  - merchant_category_code STRING    MCC code (e.g. '5411' = Grocery, '5812' = Restaurant)
-  - amount               FLOAT64     Transaction amount in the transaction currency
+  - merchant_category_code STRING    A standard four-digit number used by credit card processors to classify a business by the type of goods or services it provides.
+  - transaction_amount   FLOAT64     Transaction amount in the transaction currency
   - currency             STRING      Currency code (e.g. 'AUD', 'USD', 'EUR')
-  - is_flagged_fraud     BOOL        True if the transaction was flagged as fraudulent
+  - is_flagged           BOOL        True if the transaction was flagged as fraudulent
   - risk_score           FLOAT64     Fraud risk score between 0.0 (low) and 1.0 (high)
   - location_country     STRING      Country where the transaction occurred
   - terminal_id          STRING      Payment terminal identifier (e.g. TERM_1234)
@@ -64,8 +64,27 @@ Rules:
   - Only return the raw SQL query. No markdown, no explanation, no code fences.
   - Only generate SELECT statements. Never use INSERT, UPDATE, DELETE, DROP, or CREATE.
   - Use standard BigQuery SQL syntax.
-  - For date arithmetic, use TIMESTAMP functions (e.g. TIMESTAMP_SUB, CURRENT_TIMESTAMP).
+  - CRITICAL BIGQUERY RULE: `TIMESTAMP_SUB` and `TIMESTAMP_ADD` do NOT support `MONTH` or `YEAR` intervals.
+  - To filter by months/years, you MUST use `DATE()` first. Example for last month: `WHERE DATE(transaction_timestamp) >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH)`
   - Limit results to {MAX_RESULT_ROWS} rows unless the user asks for aggregates.
+
+WINDOW FUNCTION RULES (MANDATORY):
+  When you need both an aggregate (e.g. COUNT) AND a window function (e.g. cumulative SUM)
+  in the same query, you MUST use a subquery pattern:
+    1. Inner subquery: perform the GROUP BY and aggregation
+    2. Outer query: apply the window function on the pre-aggregated columns
+  NEVER mix GROUP BY with window functions in the same SELECT level.
+
+Gold Standard Examples:
+
+- Question: "Show fraudulent transactions in the last month"
+  SQL: SELECT * FROM `{FULL_TABLE_ID}` WHERE is_flagged = true AND DATE(transaction_timestamp) >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH)
+
+- Question: "Daily fraud count and cumulative count for the last 10 days"
+  SQL: SELECT day, daily_fraud_count, SUM(daily_fraud_count) OVER (ORDER BY day ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_fraud_count FROM (SELECT DATE(transaction_timestamp) AS day, COUNT(*) AS daily_fraud_count FROM `{FULL_TABLE_ID}` WHERE is_flagged = true AND DATE(transaction_timestamp) >= DATE_SUB(CURRENT_DATE(), INTERVAL 10 DAY) GROUP BY day) ORDER BY day
+
+- Question: "Top 5 merchants by total transaction amount in AUD"
+  SQL: SELECT merchant_name, SUM(transaction_amount) as total_amount FROM `{FULL_TABLE_ID}` WHERE currency = 'AUD' GROUP BY merchant_name ORDER BY total_amount DESC LIMIT 5
 """
 
 # ---------------------------------------------------------------------------
@@ -109,13 +128,24 @@ def _format_results(rows: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 
 
+MAX_RETRIES = 2  # Number of auto-fix attempts before giving up
+
+
+def _clean_sql(raw: str) -> str:
+    """Strip markdown fences and whitespace from generated SQL."""
+    sql = raw.strip()
+    sql = re.sub(r"^```(?:sql)?", "", sql, flags=re.IGNORECASE).strip()
+    sql = re.sub(r"```$", "", sql).strip()
+    return sql
+
+
 def run_text_to_sql(question: str) -> str:
     """
     Answers a natural language question about credit card transactions
     by generating and executing a BigQuery SQL query via Gemini.
 
-    This function is designed to be registered as a Tool in the
-    Vertex AI Reasoning Engine agent.
+    Includes automatic retry: if BigQuery rejects the SQL, the error
+    is fed back to Gemini so it can self-correct (up to MAX_RETRIES).
 
     Args:
         question: A natural language question about the transaction data.
@@ -128,15 +158,12 @@ def run_text_to_sql(question: str) -> str:
     # 1. Initialise Vertex AI SDK
     vertexai.init(project=GCP_PROJECT, location=GCP_REGION)
     model = GenerativeModel(GEMINI_MODEL)
+    bq_client = bigquery.Client(project=GCP_PROJECT)
 
     # 2. Generate SQL from the natural language question
     prompt = f"{SCHEMA_CONTEXT}\n\nUser question: {question}"
     response = model.generate_content(prompt)
-    generated_sql = response.text.strip()
-
-    # Strip markdown fences if Gemini wraps in ```sql ... ``` despite instructions
-    generated_sql = re.sub(r"^```(?:sql)?", "", generated_sql, flags=re.IGNORECASE).strip()
-    generated_sql = re.sub(r"```$", "", generated_sql).strip()
+    generated_sql = _clean_sql(response.text)
 
     print(f"[bq_sql_skill] Generated SQL:\n{generated_sql}\n")
 
@@ -147,15 +174,38 @@ def run_text_to_sql(question: str) -> str:
             "and was not executed. Please rephrase your question."
         )
 
-    # 4. Execute against BigQuery
-    bq_client = bigquery.Client(project=GCP_PROJECT)
-    query_job = bq_client.query(generated_sql)
-    results = query_job.result()
+    # 4. Execute against BigQuery — with automatic retry on SQL errors
+    for attempt in range(1 + MAX_RETRIES):
+        try:
+            query_job = bq_client.query(generated_sql)
+            results = query_job.result()
+            rows = [dict(row) for row in results][:MAX_RESULT_ROWS]
+            return _format_results(rows)
 
-    rows = [dict(row) for row in results][:MAX_RESULT_ROWS]
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[bq_sql_skill] Attempt {attempt + 1} failed: {error_msg}")
 
-    # 5. Return formatted results
-    return _format_results(rows)
+            if attempt < MAX_RETRIES:
+                # Feed the error back to Gemini and ask it to fix the SQL
+                retry_prompt = (
+                    f"{SCHEMA_CONTEXT}\n\n"
+                    f"User question: {question}\n\n"
+                    f"Your previous SQL was:\n{generated_sql}\n\n"
+                    f"BigQuery rejected it with this error:\n{error_msg}\n\n"
+                    f"COMMON FIX: If the error mentions 'neither grouped nor aggregated', "
+                    f"you MUST use a subquery: do the GROUP BY in a subquery first, "
+                    f"then apply window functions in the outer query on the pre-aggregated columns.\n\n"
+                    f"Please fix the SQL and return ONLY the corrected query."
+                )
+                response = model.generate_content(retry_prompt)
+                generated_sql = _clean_sql(response.text)
+                print(f"[bq_sql_skill] Retry SQL:\n{generated_sql}\n")
+
+                if not _is_safe_query(generated_sql):
+                    return "Safety check failed on retry. Please rephrase your question."
+            else:
+                return f"Query failed after {1 + MAX_RETRIES} attempts. Last error: {error_msg}"
 
 
 # ---------------------------------------------------------------------------
