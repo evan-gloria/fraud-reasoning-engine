@@ -102,6 +102,14 @@ class ChatRequest(BaseModel):
 @app.post("/chat", dependencies=[Depends(verify_auth_token)])
 def chat_endpoint(request: ChatRequest):
     try:
+        # 0. Prompt Injection Shield
+        if len(request.prompt) > 500:
+            raise HTTPException(status_code=400, detail="Security Violation: Prompt exceeds 500 character limit.")
+            
+        forbidden_words = ["ignore previous", "system prompt", "bypass", "jailbreak", "you are now"]
+        if any(fw in request.prompt.lower() for fw in forbidden_words):
+            raise HTTPException(status_code=400, detail="Security Violation: Prompt injection patterns detected.")
+            
         # 1. Save User Message to DB
         history_manager.save_message(
             conversation_id=request.conversation_id,
@@ -151,7 +159,6 @@ def chat_endpoint(request: ChatRequest):
                         gcs_uris.append(gs_uri)
                     except Exception as e:
                         print(f"⚠️ [Archival Error] Failed to upload chart: {e}")
-
         # 4b. Process Decks
         deck_matches = re.findall(r'<DECK>(.*?)</DECK>', answer)
         for deck_filename in deck_matches:
@@ -183,7 +190,6 @@ def chat_endpoint(request: ChatRequest):
                         gcs_uris.append(gs_uri)
                     except Exception as e:
                         print(f"⚠️ [Archival Error] Failed to upload deck: {e}")
-        
         # 5. Save AI Response to DB
         history_manager.save_message(
             conversation_id=request.conversation_id,
@@ -193,7 +199,7 @@ def chat_endpoint(request: ChatRequest):
             decks_base64=decks_base64,
             gcs_uris=gcs_uris
         )
-                    
+
         return {
             "response": answer,
             "charts_base64": charts_base64,
