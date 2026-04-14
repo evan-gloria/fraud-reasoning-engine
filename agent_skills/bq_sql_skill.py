@@ -180,7 +180,7 @@ def run_text_to_sql(question: str) -> str:
             query_job = bq_client.query(generated_sql)
             results = query_job.result()
             rows = [dict(row) for row in results][:MAX_RESULT_ROWS]
-            return _format_results(rows)
+            return {"results": _format_results(rows), "sql": generated_sql}
 
         except Exception as e:
             error_msg = str(e)

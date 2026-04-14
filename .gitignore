@@ -209,5 +209,13 @@ __marimo__/
 # Mock Data
 *.csv
 
-# UI Artifacts
+# UI Artifacts & Decks
 ui/static/*.png
+ui/static/decks/
+
+# Persistence
+data/
+
+# OS Specific
+.DS_Store
+Thumbs.db
