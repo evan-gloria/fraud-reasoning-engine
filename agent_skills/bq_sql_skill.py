@@ -94,9 +94,12 @@ Gold Standard Examples:
 
 def _is_safe_query(sql: str) -> bool:
     """
-    Rejects any SQL that is not a plain SELECT statement.
-    Guards against prompt injection attempts that try to run DML/DDL.
+    Rejects any SQL that is not a plain SELECT statement or contains multiple statements.
+    Guards against prompt injection attempts that try to run DML/DDL or statement stacking.
     """
+    if ";" in sql:
+        return False
+        
     normalised = sql.strip().upper()
     forbidden = re.compile(
         r"\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|MERGE|CALL)\b"

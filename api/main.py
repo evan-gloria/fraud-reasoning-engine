@@ -1,11 +1,14 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Header
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 import base64
 import re
 from pathlib import Path
-
 import os
+
+from google.oauth2 import id_token
+import google.auth.transport.requests
+
 from reasoning_engine.fraud_investigator import get_agent, ask_agent
 from api.history_manager import HistoryManager
 from agent_skills.storage_skill import upload_chart_to_gcs
@@ -13,6 +16,27 @@ from agent_skills.storage_skill import upload_chart_to_gcs
 app = FastAPI(title="Fraud Reasoning Engine Backend")
 history_manager = HistoryManager()
 ARTIFACT_BUCKET = os.environ.get("GCP_ARTIFACT_BUCKET")
+VERIFY_AUTH = os.environ.get("VERIFY_AUTH", "false").lower() == "true"
+
+async def verify_auth_token(authorization: Optional[str] = Header(None)):
+    """Validates the Google OIDC Identity Token sent by the UI client."""
+    if not VERIFY_AUTH:
+        return None # Public POC Mode
+    
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    
+    token = authorization.split("Bearer")[1].strip()
+    try:
+        request = google.auth.transport.requests.Request()
+        # id_token verification throws an exception if invalid, expired, or wrong audience
+        # Cloud Run normally handles audience verification at the proxy level.
+        # We pass certs to strictly enforce mathematical signature validity.
+        id_info = id_token.verify_oauth2_token(token, request)
+        return id_info
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Token verification failed: {str(e)}")
+
 
 @app.get("/")
 def read_root():
@@ -31,23 +55,23 @@ def audit_firestore():
 # History Endpoints
 # ---------------------------------------------------------------------------
 
-@app.get("/conversations")
+@app.get("/conversations", dependencies=[Depends(verify_auth_token)])
 def list_conversations():
     print("🕵️ [API Trace] Fetching Case Registry from memory...")
     convos = history_manager.get_conversations()
     print(f"🕵️ [API Trace] Found {len(convos)} total cases in registry.")
     return convos
 
-@app.post("/conversations")
+@app.post("/conversations", dependencies=[Depends(verify_auth_token)])
 def create_conversation():
     convo_id = history_manager.create_conversation()
     return {"conversation_id": convo_id}
 
-@app.get("/history/{conversation_id}")
+@app.get("/history/{conversation_id}", dependencies=[Depends(verify_auth_token)])
 def get_history(conversation_id: str):
     return history_manager.get_history(conversation_id)
 
-@app.delete("/conversations/{conversation_id}")
+@app.delete("/conversations/{conversation_id}", dependencies=[Depends(verify_auth_token)])
 def delete_conversation(conversation_id: str):
     history_manager.delete_conversation(conversation_id)
     return {"status": "deleted"}
@@ -55,7 +79,7 @@ def delete_conversation(conversation_id: str):
 class RenameRequest(BaseModel):
     title: str
 
-@app.patch("/conversations/{conversation_id}")
+@app.patch("/conversations/{conversation_id}", dependencies=[Depends(verify_auth_token)])
 def rename_conversation(conversation_id: str, request: RenameRequest):
     history_manager.rename_conversation(conversation_id, request.title)
     return {"status": "renamed"}
@@ -75,7 +99,7 @@ class ChatRequest(BaseModel):
     messages: List[Message]
     prompt: str
 
-@app.post("/chat")
+@app.post("/chat", dependencies=[Depends(verify_auth_token)])
 def chat_endpoint(request: ChatRequest):
     try:
         # 1. Save User Message to DB
@@ -104,7 +128,11 @@ def chat_endpoint(request: ChatRequest):
         for chart_filename in chart_matches:
             full_tag = f"<CHART>{chart_filename}</CHART>"
             answer = answer.replace(full_tag, "").strip()
-            chart_path = Path(__file__).parent.parent / "ui" / "static" / chart_filename.strip()
+            
+            # 🚨 Security: Prevent Path Traversal (Local File Inclusion)
+            safe_filename = os.path.basename(chart_filename.strip())
+            
+            chart_path = Path(__file__).parent.parent / "ui" / "static" / safe_filename
             if chart_path.exists():
                 # Encode for UI
                 with open(chart_path, "rb") as image_file:
@@ -129,7 +157,11 @@ def chat_endpoint(request: ChatRequest):
         for deck_filename in deck_matches:
             full_tag = f"<DECK>{deck_filename}</DECK>"
             answer = answer.replace(full_tag, "").strip()
-            deck_path = Path(__file__).parent.parent / "ui" / "static" / "decks" / deck_filename.strip()
+            
+            # 🚨 Security: Prevent Path Traversal (Local File Inclusion)
+            safe_filename = os.path.basename(deck_filename.strip())
+            
+            deck_path = Path(__file__).parent.parent / "ui" / "static" / "decks" / safe_filename
             if deck_path.exists():
                 # Encode for UI
                 with open(deck_path, "rb") as deck_file:

@@ -288,7 +288,7 @@ if st.session_state.get("conversation_id"):
 # Render Hero Screen OR Chat History
 # ---------------------------------------------------------------------------
 
-if not st.session_state.get("messages"):
+if not st.session_state.get("conversation_id"):
     # Show Hero Onboarding as the "Empty State" for a new investigation
     st.markdown("<br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
@@ -300,8 +300,14 @@ if not st.session_state.get("messages"):
                 Welcome to the **Fraud Reasoning Engine**. This workspace is ready for analysis. 
                 You can query transaction data, generate risk profiles, and archive evidence.
             """)
-            st.info("📊 **Suggested first steps:**\n- 'Show me fraud transactions in the last 7 days'\n- 'Which merchants have the highest risk scores?'\n- 'Analyze transactions by currency and create a report'")
+            st.write("<br>", unsafe_allow_html=True)
+            if st.button("🚀 Start New Investigation", use_container_width=True, type="primary"):
+                start_new_investigation()
+                st.rerun()
 else:
+    if not st.session_state.get("messages"):
+        st.info("📊 **Suggested first steps:**\n- 'Show me fraud transactions in the last 7 days'\n- 'Which merchants have the highest risk scores?'\n- 'Analyze transactions by currency and create a report'")
+
     # Render active chat history
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
@@ -341,61 +347,62 @@ else:
 # Chat Execution
 # ---------------------------------------------------------------------------
 
-if prompt := st.chat_input("Ask about suspicious activity..."):
-    
-    # 1. Display user message immediately
-    with st.chat_message("user"):
-        st.markdown(prompt)
+if st.session_state.get("conversation_id"):
+    if prompt := st.chat_input("Ask about suspicious activity..."):
         
-    # 2. Invoke the Backend API
-    with st.chat_message("assistant"):
-        with st.spinner("Analyzing case data..."):
-            try:
-                payload = {
-                    "conversation_id": st.session_state.conversation_id,
-                    "messages": st.session_state.messages,
-                    "prompt": prompt
-                }
-                
-                response = requests.post(API_CHAT_URL, json=payload)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    answer = data.get("response", "")
-                    charts_base64 = data.get("charts_base64", [])
-                    decks_base64 = data.get("decks_base64", [])
+        # 1. Display user message immediately
+        with st.chat_message("user"):
+            st.markdown(prompt)
+            
+        # 2. Invoke the Backend API
+        with st.chat_message("assistant"):
+            with st.spinner("Analyzing case data..."):
+                try:
+                    payload = {
+                        "conversation_id": st.session_state.conversation_id,
+                        "messages": st.session_state.messages,
+                        "prompt": prompt
+                    }
                     
-                    st.markdown(answer)
+                    response = requests.post(API_CHAT_URL, json=payload)
                     
-                    # Handle Visualizations
-                    if charts_base64:
-                        cols = st.columns(len(charts_base64))
-                        for i, chart_b64 in enumerate(charts_base64):
-                            image_data = base64.b64decode(chart_b64)
-                            cols[i].image(image_data)
-                    
-                    # Handle Decks
-                    if decks_base64:
-                        for deck in decks_base64:
-                            deck_data = base64.b64decode(deck["base64"])
-                            st.download_button(
-                                label=f"📥 Download Presentation: {deck['filename']}",
-                                data=deck_data,
-                                file_name=deck["filename"],
-                                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                            )
+                    if response.status_code == 200:
+                        data = response.json()
+                        answer = data.get("response", "")
+                        charts_base64 = data.get("charts_base64", [])
+                        decks_base64 = data.get("decks_base64", [])
                         
-                    # State update (will be synced from DB on next load, but update locally for reactivity)
-                    st.session_state.messages.append({"role": "user", "content": prompt})
-                    st.session_state.messages.append({
-                        "role": "assistant", 
-                        "content": answer, 
-                        "charts_base64": charts_base64,
-                        "decks_base64": decks_base64
-                    })
-                    
-                else:
-                    st.error(f"Backend Error [{response.status_code}]: {response.text}")
-                    
-            except Exception as e:
-                st.error(f"Connection Error: {e}")
+                        st.markdown(answer)
+                        
+                        # Handle Visualizations
+                        if charts_base64:
+                            cols = st.columns(len(charts_base64))
+                            for i, chart_b64 in enumerate(charts_base64):
+                                image_data = base64.b64decode(chart_b64)
+                                cols[i].image(image_data)
+                        
+                        # Handle Decks
+                        if decks_base64:
+                            for deck in decks_base64:
+                                deck_data = base64.b64decode(deck["base64"])
+                                st.download_button(
+                                    label=f"📥 Download Presentation: {deck['filename']}",
+                                    data=deck_data,
+                                    file_name=deck["filename"],
+                                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                                )
+                            
+                        # State update (will be synced from DB on next load, but update locally for reactivity)
+                        st.session_state.messages.append({"role": "user", "content": prompt})
+                        st.session_state.messages.append({
+                            "role": "assistant", 
+                            "content": answer, 
+                            "charts_base64": charts_base64,
+                            "decks_base64": decks_base64
+                        })
+                        
+                    else:
+                        st.error(f"Backend Error [{response.status_code}]: {response.text}")
+                        
+                except Exception as e:
+                    st.error(f"Connection Error: {e}")
