@@ -13,17 +13,11 @@ WORKDIR /app
 # Install system dependencies if required for graphing libraries
 RUN apt-get update && apt-get install -y gcc g++ && rm -rf /var/lib/apt/lists/*
 
-# Install poetry
-RUN pip install "poetry==$POETRY_VERSION"
+# Copy ONLY requirements first to cache the docker layer
+COPY requirements.txt ./
 
-# Copy ONLY dependencies first to cache the docker layer
-COPY pyproject.toml poetry.lock* ./
-
-# Sync the lock file to ensure compatibility with the container's Poetry version
-RUN poetry lock --no-update
-
-# Install dependencies (since virtualenvs.create is false, this installs directly into the system python)
-RUN poetry install --no-root --only main
+# Install dependencies directly using pip (High Reliability Mode)
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Now copy the rest of the application code
 COPY . .
