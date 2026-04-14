@@ -36,13 +36,14 @@ Hardened for high-stakes investigations:
 
 ### 3. UX Performance & Scalability
 Designed for professional audit workflows where case history can span hundreds of investigations:
-- **Lazy-Load Onboarding**: The app bypasses the "Auto-Investigate" bottleneck, opening instantly to a clean onboarding screen. Data is fetched only when a specific case is activated.
-- **Paginated Case Registry**: A streamlined sidebar that organizes history into manageable 5-case blocks, preventing vertical bloat and ensuring rapid navigation.
+- **On-Demand Archive Retrieval**: The app completely bypasses startup latency by eliminating auto-fetching. The Case Registry is now stored behind a dedicated "View Case Archives" UI state, moving heavy database reads off the critical startup path.
+- **Real-Time Archive Search**: Instantly filter historical investigations by Case ID or Title without dragging down the performance of the active investigation stream.
 
 ### 4. Production Governance & Security
 - **Reactive Registry**: Automatic synchronization between the UI and Backend using Firestore persistence.
 - **Identity Token Auth**: Backend endpoints are secured using Google Identity Tokens for institutional-grade access control.
 - **Immutable Metadata**: Every report produced is tagged with GCS custom metadata (`user_prompt`, `sql_query`, `case_id`) for permanent audit trails.
+- **Triad Defense (Prompt Injection)**: Employs a three-layer adversarial shield: Frontend Payload Limits (`max_chars`), Backend API Keyword Filtration, and a Hardened AI System Prompt Directive to refuse jailbreak attempts.
 
 ---
 

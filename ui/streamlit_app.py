@@ -91,6 +91,58 @@ def start_new_investigation():
     except Exception as e:
         st.error(f"Failed to start new investigation: {e}")
 
+def render_archives():
+    st.subheader("🏛️ Investigative Archive")
+    st.write("Browse past investigations recorded in the corporate registry.")
+    if st.button("⬅️ Back to Home"):
+        st.session_state.view_archives = False
+        st.rerun()
+    st.divider()
+
+    with st.spinner("⏳ Accessing Corporate Registry..."):
+        try:
+            headers = get_auth_headers(API_BASE_URL)
+            response = requests.get(API_CONVO_URL, headers=headers, timeout=10)
+            if response.status_code == 200:
+                convos = response.json()
+                if not convos:
+                    st.info("The archive is currently empty.")
+                else:
+                    search_query = st.text_input("🔍 Search Case Title or ID", "").lower()
+                    
+                    filtered_convos = [
+                        c for c in convos 
+                        if search_query in str(c.get('title', '')).lower() 
+                        or search_query in str(c.get('id', '')).lower()
+                    ]
+                    
+                    if not filtered_convos:
+                        st.info("No matching cases found.")
+                        
+                    for convo in filtered_convos[:20]: # Limit to 20 for perf
+                        c_title = convo.get('title') or convo.get('id') or "Untitled investigation"
+                        c_id = convo.get('id', 'Unknown_ID')
+                        col1, col2 = st.columns([0.8, 0.2])
+                        with col1:
+                            st.write(f"📄 **{c_title}**")
+                            st.caption(f"ID: {c_id}")
+                        with col2:
+                            if st.button("Load", key=f"load_{c_id}", use_container_width=True):
+                                # Load the conversation
+                                st.toast(f"Retrieving Case {c_id}...", icon="⏳")
+                                r2 = requests.get(f"{API_HISTORY_URL}/{c_id}", headers=headers)
+                                if r2.status_code == 200:
+                                    st.session_state.conversation_id = c_id
+                                    st.session_state.messages = r2.json()
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to load.")
+                        st.divider()
+            else:
+                st.error("Registry Sync Failed")
+        except Exception as e:
+            st.error(f"Failed to fetch archives: {e}")
+
 
 # ---------------------------------------------------------------------------
 # Main Chat Area
@@ -118,9 +170,19 @@ if not st.session_state.get("conversation_id"):
                 You can query transaction data, generate risk profiles, and archive evidence.
             """)
             st.write("<br>", unsafe_allow_html=True)
-            if st.button("🚀 Start New Investigation", use_container_width=True, type="primary"):
-                start_new_investigation()
-                st.rerun()
+            
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.button("🚀 Start New Investigation", use_container_width=True, type="primary"):
+                    start_new_investigation()
+                    st.rerun()
+            with col_b:
+                if st.button("📂 View Case Archives", use_container_width=True):
+                    st.session_state.view_archives = True
+                    st.rerun()
+                    
+            if st.session_state.get("view_archives"):
+                render_archives()
 else:
     if not st.session_state.get("messages"):
         st.info("📊 **Suggested first steps:**\n- 'Show me fraud transactions in the last 7 days'\n- 'Which merchants have the highest risk scores?'\n- 'Analyze transactions by currency and create a report'")
@@ -165,7 +227,7 @@ else:
 # ---------------------------------------------------------------------------
 
 if st.session_state.get("conversation_id"):
-    if prompt := st.chat_input("Ask about suspicious activity..."):
+    if prompt := st.chat_input("Ask about suspicious activity...", max_chars=500):
         
         # 1. Display user message immediately
         with st.chat_message("user"):
