@@ -29,12 +29,12 @@ def get_auth_headers(target_url: str):
         return {}
     
     try:
-        # Get default credentials (requires: gcloud auth application-default login)
+        # Attempt standard OIDC token fetch (Works on GCP or with local SA Key)
         auth_req = google.auth.transport.requests.Request()
         token = id_token.fetch_id_token(auth_req, target_url)
         return {"Authorization": f"Bearer {token}"}
-    except Exception as e:
-        print(f"⚠️ [Auth Error] Failed to generate ID token: {e}")
+    except Exception:
+        # Quietly fail. If the service is --allow-unauthenticated, this is expected.
         return {}
 
 # ---------------------------------------------------------------------------
@@ -53,6 +53,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "convos" not in st.session_state:
     st.session_state.convos = []
+if "reg_page" not in st.session_state:
+    st.session_state.reg_page = 0
 
 st.set_page_config(
     page_title="Fraud Reasoning Engine",
@@ -197,7 +199,8 @@ with st.sidebar:
     # 2. Add a real-time Search/Filter
     search_query = st.text_input("🔍 Search Case Number or Title", "").lower()
     
-    # 3. Render Registry from State
+    # 3. Render Registry from State with Pagination
+    PAGE_SIZE = 5
     convos = st.session_state.get("convos", [])
     filtered_convos = [
         c for c in convos 
@@ -205,13 +208,24 @@ with st.sidebar:
         or search_query in str(c.get('id', '')).lower()
     ]
     
+    total_convos = len(filtered_convos)
+    total_pages = (total_convos + PAGE_SIZE - 1) // PAGE_SIZE if total_convos > 0 else 1
+    
+    # Bound the current page if search results changed
+    if st.session_state.reg_page >= total_pages:
+        st.session_state.reg_page = 0
+        
+    start_idx = st.session_state.reg_page * PAGE_SIZE
+    end_idx = start_idx + PAGE_SIZE
+    page_convos = filtered_convos[start_idx:end_idx]
+    
     if not filtered_convos:
         if not convos:
             st.info("Central Registry is currently empty.")
         else:
             st.info("No matching cases found.")
             
-    for convo in filtered_convos:
+    for convo in page_convos:
         is_active = st.session_state.get("conversation_id") == convo['id']
         
         item_col, edit_col, del_col = st.columns([0.6, 0.2, 0.2], gap="small")
@@ -246,25 +260,24 @@ with st.sidebar:
                     delete_investigation(convo.get('id', 'Unknown_ID'))
                     st.rerun()
 
+    # 4. Pagination Controls
+    if total_pages > 1:
+        st.divider()
+        prev_col, page_col, next_col = st.columns([0.2, 0.6, 0.2])
+        with prev_col:
+            if st.button("⬅️", disabled=st.session_state.reg_page == 0, use_container_width=True):
+                st.session_state.reg_page -= 1
+                st.rerun()
+        with page_col:
+            st.write(f"<p style='text-align: center; color: grey;'>Page {st.session_state.reg_page + 1} of {total_pages}</p>", unsafe_allow_html=True)
+        with next_col:
+            if st.button("➡️", disabled=st.session_state.reg_page >= total_pages - 1, use_container_width=True):
+                st.session_state.reg_page += 1
+                st.rerun()
+
 # ---------------------------------------------------------------------------
 # Main Chat Area
 # ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Main Chat Area - State Initialization
-# ---------------------------------------------------------------------------
-
-if "conversation_id" not in st.session_state or st.session_state.conversation_id is None:
-    try:
-        headers = get_auth_headers(API_BASE_URL)
-        response = requests.get(API_CONVO_URL, headers=headers, timeout=2)
-        if response.status_code == 200:
-            convos = response.json()
-            if convos:
-                load_investigation(convos[0]['id'])
-                st.rerun()
-    except:
-        pass
 
 # Always show the main title and case ID
 st.title("Fraud Reasoning Engine")
