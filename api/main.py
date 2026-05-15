@@ -103,8 +103,8 @@ class ChatRequest(BaseModel):
 def chat_endpoint(request: ChatRequest):
     try:
         # 0. Prompt Injection Shield
-        if len(request.prompt) > 500:
-            raise HTTPException(status_code=400, detail="Security Violation: Prompt exceeds 500 character limit.")
+        if len(request.prompt) > 1000:
+            raise HTTPException(status_code=400, detail="Security Violation: Prompt exceeds 1000 character limit.")
             
         forbidden_words = ["ignore previous", "system prompt", "bypass", "jailbreak", "you are now"]
         if any(fw in request.prompt.lower() for fw in forbidden_words):
