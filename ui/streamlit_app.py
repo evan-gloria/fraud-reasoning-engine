@@ -227,7 +227,7 @@ else:
 # ---------------------------------------------------------------------------
 
 if st.session_state.get("conversation_id"):
-    if prompt := st.chat_input("Ask about suspicious activity...", max_chars=500):
+    if prompt := st.chat_input("Ask about suspicious activity...", max_chars=1000):
         
         # 1. Display user message immediately
         with st.chat_message("user"):
