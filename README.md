@@ -18,6 +18,10 @@ The engine is built on a modular, decoupled architecture designed for executive-
 | **`ui/`** | Streamlit | The "Command Center." A reactive, authenticated interface for investigators. |
 | **`scripts/`** | Python + Faker | Synthetic data factory for generating realistic fraud scenarios. |
 
+### 🗺️ Architecture Diagram
+
+![Fraud Reasoning Engine — Architecture](assets/fraud-reasoning-architecture.png)
+
 ---
 
 ## 🌟 Modernized Features
